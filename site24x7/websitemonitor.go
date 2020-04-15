@@ -9,6 +9,7 @@ import (
 	"github.com/Bonial-International-GmbH/site24x7-go/api"
 	apierrors "github.com/Bonial-International-GmbH/site24x7-go/api/errors"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	log "github.com/sirupsen/logrus"
 )
 
 var WebsiteMonitorSchema = map[string]*schema.Schema{
@@ -38,34 +39,62 @@ var WebsiteMonitorSchema = map[string]*schema.Schema{
 		Type:     schema.TypeString,
 		Optional: true,
 	},
-	"matching_keyword_value": {
-		Type:     schema.TypeString,
+	"matching_keyword": {
+		Type:     schema.TypeMap,
 		Optional: true,
-		Default:  "", // do not auto detect
+		Elem: &schema.Resource{
+			Schema: map[string]*schema.Schema{
+				"severity": {
+					Type:     schema.TypeInt,
+					Optional: true,
+					Default:  2,
+				},
+
+				"value": {
+					Type:     schema.TypeString,
+					Optional: true,
+					Default:  "", // do not auto detect
+				},
+			},
+		},
 	},
-	"matching_keyword_severity": {
-		Type:     schema.TypeInt,
+	"unmatching_keyword": {
+		Type:     schema.TypeMap,
 		Optional: true,
-		Default:  2,
+		Elem: &schema.Resource{
+			Schema: map[string]*schema.Schema{
+				"severity": {
+					Type:     schema.TypeInt,
+					Optional: true,
+					Default:  2,
+				},
+
+				"value": {
+					Type:     schema.TypeString,
+					Optional: true,
+					Default:  "", // do not auto detect
+				},
+			},
+		},
 	},
-	"unmatching_keyword_value": {
-		Type:     schema.TypeString,
+	"match_regex": {
+		Type:     schema.TypeMap,
 		Optional: true,
-		Default:  "", // do not auto detect
-	},
-	"unmatching_keyword_severity": {
-		Type:     schema.TypeInt,
-		Optional: true,
-		Default:  2,
-	},
-	"match_regex_value": {
-		Type:     schema.TypeString,
-		Optional: true,
-	},
-	"match_regex_severity": {
-		Type:     schema.TypeInt,
-		Optional: true,
-		Default:  2,
+		Elem: &schema.Resource{
+			Schema: map[string]*schema.Schema{
+				"severity": {
+					Type:     schema.TypeInt,
+					Optional: true,
+					Default:  2,
+				},
+
+				"value": {
+					Type:     schema.TypeString,
+					Optional: true,
+					Default:  "", // do not auto detect
+				},
+			},
+		},
 	},
 	"match_case": {
 		Type:     schema.TypeBool,
@@ -282,25 +311,30 @@ func resourceDataToWebsiteMonitor(d *schema.ResourceData, client site24x7.Client
 		UseNameServer:         d.Get("use_name_server").(bool),
 	}
 
-	if _, ok := d.GetOk("match_regex_value"); ok {
-		websiteMonitor.MatchRegex = &api.ValueAndSeverity{
-			Value:    d.Get("match_regex_value").(string),
-			Severity: api.Status(d.Get("match_regex_severity").(int)),
-		}
-	}
+	// if _, ok := d.GetOk("match_regex_value"); ok {
+	// 	websiteMonitor.MatchRegex = &api.ValueAndSeverity{
+	// 		Value:    d.Get("match_regex_value").(string),
+	// 		Severity: api.Status(d.Get("match_regex_severity").(int)),
+	// 	}
+	// }
 
-	if _, ok := d.GetOk("unmatching_keyword_value"); ok {
-		websiteMonitor.UnmatchingKeyword = &api.ValueAndSeverity{
-			Value:    d.Get("unmatching_keyword_value").(string),
-			Severity: api.Status(d.Get("unmatching_keyword_severity").(int)),
-		}
-	}
+	// if _, ok := d.GetOk("unmatching_keyword_value"); ok {
+	// 	websiteMonitor.UnmatchingKeyword = &api.ValueAndSeverity{
+	// 		Value:    d.Get("unmatching_keyword_value").(string),
+	// 		Severity: api.Status(d.Get("unmatching_keyword_severity").(int)),
+	// 	}
+	// }
 
-	if _, ok := d.GetOk("matching_keyword_value"); ok {
+	if _, ok := d.GetOk("matching_keyword"); ok {
+
+		matchingKeyword := d.Get("matching_keyword").(map[string]interface{})
+		log.Printf("MatchingKeyword Value %s - %s", matchingKeyword["value"], matchingKeyword["severity"])
+
 		websiteMonitor.MatchingKeyword = &api.ValueAndSeverity{
-			Value:    d.Get("matching_keyword_value").(string),
-			Severity: api.Status(d.Get("matching_keyword_severity").(int)),
+			Value:    matchingKeyword["value"].(string),
+			Severity: api.Status(matchingKeyword["severity"].(int)),
 		}
+		log.Printf("After MatchingKeyword Value %s ", websiteMonitor.MatchingKeyword)
 	}
 
 	if websiteMonitor.LocationProfileID == "" {
@@ -350,18 +384,21 @@ func updateWebsiteMonitorResourceData(d *schema.ResourceData, monitor *api.Monit
 	d.Set("http_method", monitor.HTTPMethod)
 	d.Set("auth_user", monitor.AuthUser)
 	d.Set("auth_pass", monitor.AuthPass)
+	matchingKeyword := map[string]interface{}{
+		"value":    monitor.MatchingKeyword.Value,
+		"severity": monitor.MatchingKeyword.Severity,
+	}
+	log.Printf("OnUpdate matchingKeyword %s", matchingKeyword)
 	if monitor.MatchingKeyword != nil {
-		d.Set("matching_keyword_value", monitor.MatchingKeyword.Value)
-		d.Set("matching_keyword_severity", monitor.MatchingKeyword.Severity)
+		d.Set("matching_keyword", matchingKeyword)
 	}
-	if monitor.UnmatchingKeyword != nil {
-		d.Set("unmatching_keyword_value", monitor.UnmatchingKeyword.Value)
-		d.Set("unmatching_keyword_severity", monitor.UnmatchingKeyword.Severity)
-	}
-	if monitor.MatchRegex != nil {
-		d.Set("match_regex_value", monitor.MatchRegex.Value)
-		d.Set("match_regex_severity", monitor.MatchRegex.Severity)
-	}
+	// if monitor.UnmatchingKeyword != nil {
+	// 	d.Set("matching_keyword", monitor.UnmatchingKeyword)
+	// }
+	// if monitor.MatchRegex != nil {
+	// 	d.Set("match_regex_value", monitor.MatchRegex.Value)
+	// 	d.Set("match_regex_severity", monitor.MatchRegex.Severity)
+	// }
 	d.Set("match_case", monitor.MatchCase)
 	d.Set("user_agent", monitor.UserAgent)
 
